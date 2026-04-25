@@ -5,6 +5,8 @@ Ein kleiner Heimnetz-Webdienst, der für ein selbstgebautes 12-Segment-Glücksra
 zufälligen Aufgaben (z. B. Kleines 1×1) erzeugt. Gedacht zum Einsatz im
 Klassenzimmer als Gamification für Grundschüler:innen.
 
+![Glücksrad Generator – Screenshot](docs/showcase.png)
+
 ## Funktionsweise
 
 1. Lehrkraft öffnet die Web-App im LAN.
