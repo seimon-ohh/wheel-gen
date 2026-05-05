@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   downloadFile,
+  fetchEmojiCatalog,
   fetchExerciseTypes,
   generateItems,
   renderWheel,
+  type EmojiCatalog,
   type ExerciseType,
   type Item,
   type ParamSpec,
   type RenderRequest,
   type RenderResponse,
+  type SegmentFillMode,
   type SizeMode,
+  type TextOrientation,
 } from "./api";
 import { HelpModal } from "./HelpModal";
 import { SegmentList, type SegmentRow } from "./SegmentList";
@@ -23,7 +27,7 @@ function defaultParamsFor(t: ExerciseType): ParamValues {
 }
 
 function makeBlankRow(): SegmentRow {
-  return { id: cryptoRandomId(), text: "", answer: "" };
+  return { id: cryptoRandomId(), text: "", answer: "", emoji: "" };
 }
 
 function cryptoRandomId(): string {
@@ -38,11 +42,17 @@ function itemsToRows(items: Item[]): SegmentRow[] {
     id: cryptoRandomId(),
     text: it.text,
     answer: it.answer,
+    emoji: it.emoji ?? "",
   }));
 }
 
 function rowsToItems(rows: SegmentRow[]): Item[] {
-  return rows.map((r) => ({ text: r.text, answer: r.answer, meta: {} }));
+  return rows.map((r) => ({
+    text: r.text,
+    answer: r.answer,
+    emoji: r.emoji,
+    meta: {},
+  }));
 }
 
 function resizeRows(rows: SegmentRow[], n: number): SegmentRow[] {
@@ -66,6 +76,9 @@ export default function App() {
   const [size, setSize] = useState<SizeMode>("cricut");
   const [hubDiameter, setHubDiameter] = useState<number>(19.0);
   const [hubClearance, setHubClearance] = useState<number>(0.4);
+  const [textOrientation, setTextOrientation] =
+    useState<TextOrientation>("horizontal");
+  const [fillMode, setFillMode] = useState<SegmentFillMode>("none");
 
   // Content
   const [rows, setRows] = useState<SegmentRow[]>(() =>
@@ -85,6 +98,11 @@ export default function App() {
   const openEditor = () => setEditorOpen(true);
   const toggleEditor = () => setEditorOpen((o) => !o);
 
+  // Catalog used by the per-row emoji picker. Fetched once on mount;
+  // a null value just means the picker shows a "Lade Bilder…" state
+  // until it arrives.
+  const [emojiCatalog, setEmojiCatalog] = useState<EmojiCatalog | null>(null);
+
   useEffect(() => {
     fetchExerciseTypes()
       .then((ts) => {
@@ -94,6 +112,9 @@ export default function App() {
           setParams(defaultParamsFor(ts[0]));
         }
       })
+      .catch((e) => setActionError(String(e)));
+    fetchEmojiCatalog()
+      .then(setEmojiCatalog)
       .catch((e) => setActionError(String(e)));
   }, []);
 
@@ -113,6 +134,8 @@ export default function App() {
     size,
     hub_diameter_mm: hubDiameter,
     hub_clearance_mm: hubClearance,
+    text_orientation: textOrientation,
+    fill_mode: fillMode,
     title: activeType?.label ?? null,
   });
 
@@ -142,7 +165,16 @@ export default function App() {
       if (renderTimer.current) window.clearTimeout(renderTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, segments, size, hubDiameter, hubClearance, typeId]);
+  }, [
+    rows,
+    segments,
+    size,
+    hubDiameter,
+    hubClearance,
+    textOrientation,
+    fillMode,
+    typeId,
+  ]);
 
   const onTypeChange = (id: string) => {
     setTypeId(id);
@@ -184,10 +216,13 @@ export default function App() {
       if (!it) return;
       setRows((cur) => {
         const next = cur.slice();
+        // Rerolling generates fresh text-based content, so we clear
+        // any emoji that might have been on this segment.
         next[index] = {
           ...next[index],
           text: it.text,
           answer: it.answer,
+          emoji: it.emoji ?? "",
         };
         return next;
       });
@@ -209,7 +244,9 @@ export default function App() {
     }
   };
 
-  const filledCount = rows.filter((r) => r.text.trim().length > 0).length;
+  const filledCount = rows.filter(
+    (r) => r.text.trim().length > 0 || r.emoji.length > 0,
+  ).length;
   const blankCount = segments - filledCount;
 
   return (
@@ -402,6 +439,82 @@ export default function App() {
               </span>{" "}
               Durchmesser geschnitten.
             </p>
+
+            <div className="pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <span className="label">Textausrichtung</span>
+              </div>
+              <div
+                role="radiogroup"
+                aria-label="Textausrichtung"
+                className="mt-1 grid grid-cols-2 gap-2"
+              >
+                <OrientationOption
+                  checked={textOrientation === "horizontal"}
+                  onChange={() => setTextOrientation("horizontal")}
+                  label="Horizontal"
+                  desc="Text entlang des Bogens"
+                  axis="horizontal"
+                />
+                <OrientationOption
+                  checked={textOrientation === "vertical"}
+                  onChange={() => setTextOrientation("vertical")}
+                  label="Vertikal"
+                  desc="Text entlang des Radius"
+                  axis="vertical"
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Vertikal hilft, wenn die Aufgaben lang sind und quer nicht
+                mehr lesbar passen.
+              </p>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <span className="label">Segmentfarben</span>
+              </div>
+              <div
+                role="radiogroup"
+                aria-label="Segmentfarben"
+                className="mt-1 flex flex-wrap gap-2"
+              >
+                <FillOption
+                  checked={fillMode === "none"}
+                  onChange={() => setFillMode("none")}
+                  label="Keine"
+                  swatch="none"
+                />
+                <FillOption
+                  checked={fillMode === "rainbow"}
+                  onChange={() => setFillMode("rainbow")}
+                  label="Regenbogen"
+                  swatch="rainbow"
+                />
+                <FillOption
+                  checked={fillMode === "blue"}
+                  onChange={() => setFillMode("blue")}
+                  label="Blau"
+                  swatch="blue"
+                />
+                <FillOption
+                  checked={fillMode === "green"}
+                  onChange={() => setFillMode("green")}
+                  label="Grün"
+                  swatch="green"
+                />
+                <FillOption
+                  checked={fillMode === "red"}
+                  onChange={() => setFillMode("red")}
+                  label="Rot"
+                  swatch="red"
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Farbige Segmente werden mitgedruckt – mehr Tinte, dafür
+                deutlich auffälliger.
+              </p>
+            </div>
           </SectionCard>
 
           {/* ---------- 3. DRUCK & FORMAT ---------- */}
@@ -446,7 +559,9 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-slate-500">
-              Für Cricut: SVG verwenden. Für manuellen Druck: PDF.
+              Für Cricut: SVG verwenden – das Druckmotiv ist als ein Bild
+              eingebettet, sodass Cricut nur die zwei roten Kreise
+              schneidet. Für manuellen Druck: PDF.
             </p>
             {actionError && (
               <p className="text-sm text-rose-600">{actionError}</p>
@@ -542,27 +657,45 @@ export default function App() {
                   Lösungen (für die Lehrkraft)
                 </h3>
                 <ol className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1 text-sm text-slate-700 list-decimal pl-5">
-                  {rows.map((r, i) => (
-                    <li
-                      key={r.id}
-                      className={r.text ? "" : "text-slate-300 italic"}
-                    >
-                      {r.text ? (
-                        <>
-                          <span className="font-mono">{r.text}</span>
-                          {r.answer && (
-                            <span className="text-slate-500">
-                              {" "}
-                              = {r.answer}
+                  {rows.map((r, i) => {
+                    const isEmpty = !r.text && !r.emoji;
+                    return (
+                      <li
+                        key={r.id}
+                        className={isEmpty ? "text-slate-300 italic" : ""}
+                      >
+                        {isEmpty ? (
+                          <>(leer)</>
+                        ) : r.emoji ? (
+                          <>
+                            <span
+                              className="text-base align-middle"
+                              aria-hidden="true"
+                            >
+                              {r.emoji}
                             </span>
-                          )}
-                        </>
-                      ) : (
-                        <>(leer)</>
-                      )}
-                      <span className="sr-only"> #{i + 1}</span>
-                    </li>
-                  ))}
+                            {r.answer && (
+                              <span className="text-slate-500">
+                                {" "}
+                                = {r.answer}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-mono">{r.text}</span>
+                            {r.answer && (
+                              <span className="text-slate-500">
+                                {" "}
+                                = {r.answer}
+                              </span>
+                            )}
+                          </>
+                        )}
+                        <span className="sr-only"> #{i + 1}</span>
+                      </li>
+                    );
+                  })}
                 </ol>
               </div>
             )}
@@ -615,6 +748,7 @@ export default function App() {
                   onChange={setRows}
                   onRerollOne={rerollOne}
                   rerollDisabled={generating || !typeId}
+                  emojiCatalog={emojiCatalog}
                 />
                 <div className="flex items-center justify-between text-xs">
                   <button
@@ -710,6 +844,181 @@ function SizeOption({
         <span className="block text-xs text-slate-500 mt-0.5">{desc}</span>
       </span>
     </label>
+  );
+}
+
+function OrientationOption({
+  checked,
+  onChange,
+  label,
+  desc,
+  axis,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+  desc: string;
+  axis: "horizontal" | "vertical";
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center gap-2 rounded-lg p-2.5 ring-1 transition ${
+        checked
+          ? "bg-brand-50 ring-brand-500"
+          : "bg-white ring-slate-200 hover:bg-slate-50"
+      }`}
+    >
+      <input
+        type="radio"
+        name="text-orientation"
+        className="accent-brand-600"
+        checked={checked}
+        onChange={onChange}
+      />
+      <span className="flex items-center gap-2 min-w-0">
+        <OrientationIcon axis={axis} active={checked} />
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-slate-800 leading-tight">
+            {label}
+          </span>
+          <span className="block text-xs text-slate-500 leading-tight mt-0.5 truncate">
+            {desc}
+          </span>
+        </span>
+      </span>
+    </label>
+  );
+}
+
+function OrientationIcon({
+  axis,
+  active,
+}: {
+  axis: "horizontal" | "vertical";
+  active: boolean;
+}) {
+  const stroke = active ? "#2563eb" : "#64748b";
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 22 22"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <circle
+        cx="11"
+        cy="11"
+        r="9"
+        fill="none"
+        stroke={stroke}
+        strokeWidth="1.2"
+        opacity="0.5"
+      />
+      {axis === "horizontal" ? (
+        <text
+          x="11"
+          y="11"
+          fontSize="7"
+          fontWeight="700"
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill={stroke}
+        >
+          Abc
+        </text>
+      ) : (
+        <text
+          x="11"
+          y="11"
+          fontSize="7"
+          fontWeight="700"
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill={stroke}
+          transform="rotate(-90 11 11)"
+        >
+          Abc
+        </text>
+      )}
+    </svg>
+  );
+}
+
+function FillOption({
+  checked,
+  onChange,
+  label,
+  swatch,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+  swatch: SegmentFillMode;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 ring-1 transition ${
+        checked
+          ? "bg-brand-50 ring-brand-500"
+          : "bg-white ring-slate-200 hover:bg-slate-50"
+      }`}
+    >
+      <input
+        type="radio"
+        name="fill-mode"
+        className="sr-only"
+        checked={checked}
+        onChange={onChange}
+      />
+      <FillSwatch mode={swatch} />
+      <span className="text-sm text-slate-800">{label}</span>
+    </label>
+  );
+}
+
+function FillSwatch({ mode }: { mode: SegmentFillMode }) {
+  const baseClass =
+    "inline-block h-4 w-4 rounded-full ring-1 ring-slate-300 shrink-0";
+  if (mode === "none") {
+    return (
+      <span
+        className={`${baseClass} bg-white relative overflow-hidden`}
+        aria-hidden="true"
+      >
+        <span
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(45deg, transparent 45%, #cbd5e1 45%, #cbd5e1 55%, transparent 55%)",
+          }}
+        />
+      </span>
+    );
+  }
+  if (mode === "rainbow") {
+    return (
+      <span
+        className={baseClass}
+        style={{
+          background:
+            "conic-gradient(#f87171, #fbbf24, #facc15, #84cc16, #34d399, #38bdf8, #818cf8, #c084fc, #f472b6, #f87171)",
+        }}
+        aria-hidden="true"
+      />
+    );
+  }
+  const familyGradient: Record<string, string> = {
+    blue: "linear-gradient(135deg, #93c5fd, #60a5fa, #6366f1)",
+    green: "linear-gradient(135deg, #bef264, #86efac, #4ade80)",
+    red: "linear-gradient(135deg, #fda4af, #fb7185, #fb923c)",
+  };
+  return (
+    <span
+      className={baseClass}
+      style={{ background: familyGradient[mode] ?? "#cbd5e1" }}
+      aria-hidden="true"
+    />
   );
 }
 

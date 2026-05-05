@@ -79,6 +79,22 @@ export function HelpModal({ open, onClose }: Props) {
               Linien.
             </li>
           </ol>
+          <div className="rounded-lg bg-sky-50 ring-1 ring-sky-200 p-3 text-sky-900">
+            <p className="font-semibold">Aufgabentyp „Bildwörter“</p>
+            <p className="mt-1">
+              Wenn du als Aufgabentyp{" "}
+              <span className="font-semibold">Bildwörter</span> wählst,
+              erscheinen auf den Segmenten Bilder (z.&nbsp;B. 🏠, 🐶, 🍎)
+              statt Text. Das Kind sieht das Bild und schreibt das passende
+              Wort auf. Die Lösungen siehst du als Lehrkraft unter dem Rad.
+            </p>
+            <p className="mt-1 text-sky-800">
+              Die Bilder werden als Vektorpfade in die SVG eingebettet und
+              funktionieren mit Cricut Print&nbsp;&amp;&nbsp;Cut genauso wie
+              normaler Text.
+            </p>
+          </div>
+
           <div className="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 text-amber-900">
             <p className="font-semibold">Wichtig</p>
             <ul className="list-disc pl-5 mt-1 space-y-1">

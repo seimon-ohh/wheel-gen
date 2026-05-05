@@ -18,10 +18,15 @@ export type ExerciseType = {
 export type Item = {
   text: string;
   answer: string;
+  emoji: string;
   meta: Record<string, unknown>;
 };
 
 export type SizeMode = "cricut" | "full";
+
+export type TextOrientation = "horizontal" | "vertical";
+
+export type SegmentFillMode = "none" | "rainbow" | "blue" | "green" | "red";
 
 // ---- /api/items ----
 export type ItemsRequest = {
@@ -43,6 +48,8 @@ export type RenderRequest = {
   size: SizeMode;
   hub_diameter_mm: number;
   hub_clearance_mm: number;
+  text_orientation: TextOrientation;
+  fill_mode: SegmentFillMode;
   title?: string | null;
 };
 
@@ -56,12 +63,47 @@ export type RenderResponse = {
   svg: string;
 };
 
+// ---- /api/emoji-catalog ----
+export type EmojiEntry = {
+  emoji: string;
+  word: string;
+};
+
+export type EmojiCategory = {
+  id: string;
+  label: string;
+  emojis: EmojiEntry[];
+};
+
+export type EmojiCatalog = {
+  categories: EmojiCategory[];
+};
+
 const jsonHeaders = { "Content-Type": "application/json" };
 
 export async function fetchExerciseTypes(): Promise<ExerciseType[]> {
   const res = await fetch("/api/exercise-types");
   if (!res.ok) throw new Error("Konnte Aufgabentypen nicht laden");
   return res.json();
+}
+
+export async function fetchEmojiCatalog(): Promise<EmojiCatalog> {
+  const res = await fetch("/api/emoji-catalog");
+  if (!res.ok) throw new Error("Konnte Bilderkatalog nicht laden");
+  return res.json();
+}
+
+export function findEmojiWord(
+  catalog: EmojiCatalog | null,
+  emoji: string,
+): string | null {
+  if (!catalog) return null;
+  for (const cat of catalog.categories) {
+    for (const e of cat.emojis) {
+      if (e.emoji === emoji) return e.word;
+    }
+  }
+  return null;
 }
 
 export async function generateItems(req: ItemsRequest): Promise<ItemsResponse> {

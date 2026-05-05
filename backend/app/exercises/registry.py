@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .alphabet import AlphabetGenerator
 from .base import ExerciseGenerator
+from .bildwoerter import BildwoerterGenerator
 from .kleines_1x1 import Kleines1x1Generator
 from .wortarten import WortartenGenerator
 
@@ -11,6 +12,7 @@ _GENERATORS: dict[str, ExerciseGenerator] = {
         Kleines1x1Generator(),
         WortartenGenerator(),
         AlphabetGenerator(),
+        BildwoerterGenerator(),
     )
 }
 

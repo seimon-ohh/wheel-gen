@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from ..exercises import bildwoerter as bildwoerter_mod
 from ..exercises.base import Exercise
 from ..exercises.registry import get_generator, list_generators
 from ..wheel import (
@@ -22,6 +23,8 @@ from ..wheel import (
 router = APIRouter(prefix="/api", tags=["wheel"])
 
 SizeMode = Literal["cricut", "full"]
+TextOrientation = Literal["horizontal", "vertical"]
+SegmentFillMode = Literal["none", "rainbow", "blue", "green", "red"]
 
 
 # ---------- shared models ----------
@@ -29,6 +32,7 @@ SizeMode = Literal["cricut", "full"]
 class Item(BaseModel):
     text: str = ""
     answer: str = ""
+    emoji: str = ""
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -62,6 +66,8 @@ class RenderRequest(BaseModel):
         ge=0.0,
         le=5.0,
     )
+    text_orientation: TextOrientation = "horizontal"
+    fill_mode: SegmentFillMode = "none"
     title: str | None = None
 
 
@@ -82,10 +88,22 @@ def _diameter_for(size: SizeMode) -> float:
 
 
 def _items_to_exercises(items: list[Item]) -> list[Exercise]:
-    return [Exercise(text=i.text, answer=i.answer, meta=dict(i.meta)) for i in items]
+    return [
+        Exercise(
+            text=i.text,
+            answer=i.answer,
+            emoji=i.emoji,
+            meta=dict(i.meta),
+        )
+        for i in items
+    ]
 
 
-def _render(req: RenderRequest) -> tuple[RenderResponse, str]:
+def _render(
+    req: RenderRequest,
+    *,
+    flatten_print: bool = False,
+) -> tuple[RenderResponse, str]:
     if len(req.items) != req.segments:
         raise HTTPException(
             status_code=400,
@@ -100,9 +118,15 @@ def _render(req: RenderRequest) -> tuple[RenderResponse, str]:
         hub_diameter_mm=req.hub_diameter_mm,
         hub_clearance_mm=req.hub_clearance_mm,
         segments=req.segments,
+        text_orientation=req.text_orientation,
+        fill_mode=req.fill_mode,
         title=req.title,
     )
-    svg = render_wheel_svg(_items_to_exercises(req.items), options)
+    svg = render_wheel_svg(
+        _items_to_exercises(req.items),
+        options,
+        flatten_print=flatten_print,
+    )
     return (
         RenderResponse(
             segments=req.segments,
@@ -124,6 +148,32 @@ def exercise_types() -> list[dict[str, Any]]:
     return [g.schema() for g in list_generators()]
 
 
+@router.get("/emoji-catalog")
+def emoji_catalog() -> dict[str, Any]:
+    """Catalog used by the manual emoji picker in the segment editor.
+
+    Single source of truth: the same data drives the ``bildwoerter``
+    generator (server-side random picks) and the per-row picker
+    (client-side manual override). Shape is intentionally simple —
+    one ``categories`` list with stable IDs so the frontend can use
+    them as React keys without depending on label translations.
+    """
+    categories: list[dict[str, Any]] = []
+    for cat_id, label in bildwoerter_mod.category_order():
+        entries = bildwoerter_mod.CATEGORIES[label]
+        categories.append(
+            {
+                "id": cat_id,
+                "label": label,
+                "emojis": [
+                    {"emoji": emoji, "word": word}
+                    for emoji, word in entries
+                ],
+            }
+        )
+    return {"categories": categories}
+
+
 @router.post("/items", response_model=ItemsResponse)
 def items(req: ItemsRequest) -> ItemsResponse:
     try:
@@ -137,7 +187,8 @@ def items(req: ItemsRequest) -> ItemsResponse:
     return ItemsResponse(
         seed=seed,
         items=[
-            Item(text=e.text, answer=e.answer, meta=e.meta) for e in exercises
+            Item(text=e.text, answer=e.answer, emoji=e.emoji, meta=e.meta)
+            for e in exercises
         ],
     )
 
@@ -150,7 +201,11 @@ def render(req: RenderRequest) -> RenderResponse:
 
 @router.post("/download.svg")
 def download_svg(req: RenderRequest) -> Response:
-    _, svg = _render(req)
+    # The SVG download is the Cricut workflow: flatten the entire print
+    # layer into a single embedded raster image so Design Space cannot
+    # mistake any divider, ring or glyph for a cut path. Only the two
+    # red circles below remain as cuttable geometry.
+    _, svg = _render(req, flatten_print=True)
     return Response(
         content=svg,
         media_type="image/svg+xml",

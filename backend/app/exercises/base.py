@@ -8,10 +8,18 @@ from typing import Any
 
 @dataclass
 class Exercise:
-    """A single exercise to display in one wheel segment."""
+    """A single exercise to display in one wheel segment.
+
+    A segment shows either an ``emoji`` (rendered as a Twemoji vector
+    image — see :mod:`app.twemoji`) or its ``text``. When an emoji is
+    set it takes precedence and is the only content drawn in the
+    segment; ``text`` and ``answer`` then exist purely for the answer
+    key shown to the teacher.
+    """
 
     text: str
     answer: str = ""
+    emoji: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
 
 
