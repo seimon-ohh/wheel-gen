@@ -44,9 +44,12 @@ export function HelpModal({ open, onClose }: Props) {
               <span className="font-semibold">
                 Cricut Print&nbsp;Then&nbsp;Cut
               </span>
-              : Das Rad ist eine einzige gefüllte Fläche auf transparentem
-              Hintergrund. Cricut erkennt Außenrand und Nabenloch automatisch
-              über die Transparenz – keine roten Schnittlinien nötig.
+              : Das Rad ist eine einzige gefüllte Fläche mit transparentem
+              Nabenloch und transparentem Hintergrund. Außenkreis und Nabe
+              sind zusätzlich als <span className="font-semibold">rote
+              Schnittlinien</span> drin – Design Space erkennt sie
+              automatisch als Schnitt. Die rote Farbe ist nur ein Hinweis
+              auf der Leinwand und wird nicht gedruckt.
             </li>
             <li>
               <span className="font-semibold">PDF</span> – für den{" "}
@@ -73,8 +76,10 @@ export function HelpModal({ open, onClose }: Props) {
               </li>
               <li>
                 <span className="font-semibold">Make It</span> drücken. Cricut
-                druckt das Rad auf dem Heimdrucker und schneidet automatisch
-                entlang des Außenrands und des Nabenlochs.
+                druckt das Rad auf dem Heimdrucker und schneidet entlang der
+                roten Schnittlinien (Außenrand und Nabenloch). Die roten
+                Linien selbst werden nicht aufs Papier gedruckt – sie
+                steuern nur die Schneideklinge.
               </li>
             </ol>
           </div>

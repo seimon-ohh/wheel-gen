@@ -226,17 +226,20 @@ def render(req: RenderRequest) -> RenderResponse:
 
 @router.post("/download.svg")
 def download_svg(req: RenderRequest) -> Response:
-    # SVG download = Cricut Print-Then-Cut. The whole print layer is
-    # flattened to a single embedded PNG that already shows the wheel
-    # as one solid white disc with the hub punched out as transparency.
-    # No red cut paths: Design Space's PTC auto-trace follows the
-    # visible/transparent boundary, which is exactly the outer circle
-    # and the hub circle. Same structure as the standalone PNG export.
+    # SVG download = Cricut Print-Then-Cut. The print layer is flattened
+    # to a single embedded PNG (white wheel disc, transparent hub,
+    # transparent outside) so DS imports it as one Print-Then-Cut image
+    # without needing a manual Flatten step. We keep the two red cut
+    # circles as actual vector geometry: Design Space rejects an SVG
+    # whose only renderable content is an embedded raster ("unsafe
+    # file" warning), and the circles double as cut indicators that DS
+    # auto-assigns to "Basic Cut". The red colour is a DS canvas hint
+    # only — it never appears on the printed paper.
     _, svg = _render(
         req,
         flatten_print=True,
         fill_disc=True,
-        show_cut_circles=False,
+        show_cut_circles=True,
     )
     return Response(
         content=svg,
