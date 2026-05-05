@@ -14,11 +14,23 @@ from ..exercises.registry import get_generator, list_generators
 from ..wheel import (
     HUB_CLEARANCE_MM,
     HUB_DIAMETER_MM,
+    PAGE_PADDING_MM,
     WHEEL_DIAMETER_CRICUT_MM,
     WHEEL_DIAMETER_FULL_MM,
     WheelOptions,
     render_wheel_svg,
 )
+
+# Cricut Design Space imports raster images at 6 px/mm = 152.4 DPI
+# regardless of what the file's pHYs chunk says. (Empirically: a 180
+# mm SVG rasterised by cairosvg at dpi=300 — 2126 px square — comes
+# in at 35.42 cm = 354.2 mm in DS3, which is exactly 2126 / 354.2 =
+# 6.00 px/mm.) Rendering the PNG download at this exact pixel density
+# makes the imported image land at the physical size the teacher
+# selected, even though Design Space ignores the embedded DPI. We
+# also write a matching pHYs chunk so other tools (Inkscape, GIMP,
+# Pillow) read the same physical size.
+PNG_PIXELS_PER_MM = 6.0
 
 router = APIRouter(prefix="/api", tags=["wheel"])
 
@@ -213,15 +225,82 @@ def download_svg(req: RenderRequest) -> Response:
     )
 
 
-@router.post("/download.png")
-def download_png(req: RenderRequest) -> Response:
+def _png_with_phys(svg: str, page_mm: float, ppm: float) -> bytes:
+    """Render ``svg`` to a square PNG of exactly ``page_mm * ppm`` px
+    and rewrite the pHYs chunk so the file's metadata also reports
+    ``ppm`` pixels-per-millimetre.
+
+    Cricut Design Space ignores embedded DPI and applies its own
+    fixed 6 px/mm scale to imported PNGs — so the *only* way to land
+    at a given physical size is to control the pixel count directly.
+    Other tools (Inkscape, GIMP, Pillow, browsers) DO honour pHYs, so
+    we still write it consistently for those workflows.
+    """
     import cairosvg
 
-    _, svg = _render(req)
+    px = max(1, int(round(page_mm * ppm)))
     buf = io.BytesIO()
-    cairosvg.svg2png(bytestring=svg.encode("utf-8"), write_to=buf, dpi=300)
+    cairosvg.svg2png(
+        bytestring=svg.encode("utf-8"),
+        write_to=buf,
+        output_width=px,
+        output_height=px,
+    )
+    return _png_set_phys(buf.getvalue(), ppm)
+
+
+def _png_set_phys(png: bytes, ppm: float) -> bytes:
+    """Replace any pHYs chunk in ``png`` with one specifying
+    ``ppm`` pixels-per-millimetre.
+
+    The pHYs chunk goes immediately after IHDR, where every PNG
+    decoder expects to find resolution metadata. We strip any
+    previously-written pHYs (cairosvg writes its own with whatever
+    DPI it inferred) so there is exactly one source of truth.
+    """
+    import struct
+    import zlib
+
+    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("not a PNG")
+
+    # IHDR is always the first chunk after the 8-byte signature.
+    ihdr_len = struct.unpack(">I", png[8:12])[0]
+    ihdr_end = 12 + 4 + ihdr_len + 4  # length + 'IHDR' + data + crc
+
+    # pHYs payload: pixels-per-meter (x, y) + unit byte (1 = metres).
+    ppmeter = int(round(ppm * 1000.0))
+    data = struct.pack(">IIB", ppmeter, ppmeter, 1)
+    crc = zlib.crc32(b"pHYs" + data)
+    new_phys = struct.pack(">I", 9) + b"pHYs" + data + struct.pack(">I", crc)
+
+    rest = png[ihdr_end:]
+    out = bytearray()
+    pos = 0
+    while pos < len(rest):
+        if pos + 8 > len(rest):
+            out += rest[pos:]
+            break
+        ln = struct.unpack(">I", rest[pos:pos + 4])[0]
+        ty = bytes(rest[pos + 4:pos + 8])
+        full = 4 + 4 + ln + 4
+        if ty == b"pHYs":
+            # Drop any existing pHYs; we re-add ours after IHDR.
+            pos += full
+            continue
+        out += rest[pos:pos + full]
+        pos += full
+
+    return png[:ihdr_end] + new_phys + bytes(out)
+
+
+@router.post("/download.png")
+def download_png(req: RenderRequest) -> Response:
+    _, svg = _render(req)
+    page_mm = _diameter_for(req.size) + 2.0 * PAGE_PADDING_MM
+    png_bytes = _png_with_phys(svg, page_mm=page_mm, ppm=PNG_PIXELS_PER_MM)
     return Response(
-        content=buf.getvalue(),
+        content=png_bytes,
         media_type="image/png",
         headers={"Content-Disposition": 'attachment; filename="gluecksrad.png"'},
     )
