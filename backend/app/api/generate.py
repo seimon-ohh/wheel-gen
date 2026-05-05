@@ -17,6 +17,7 @@ from ..wheel import (
     PAGE_PADDING_MM,
     WHEEL_DIAMETER_CRICUT_MM,
     WHEEL_DIAMETER_FULL_MM,
+    PageLayout,
     WheelOptions,
     render_wheel_svg,
 )
@@ -115,6 +116,10 @@ def _render(
     req: RenderRequest,
     *,
     flatten_print: bool = False,
+    fill_disc: bool = False,
+    show_cut_circles: bool = True,
+    cut_color: str | None = None,
+    page_layout: PageLayout = "fit",
 ) -> tuple[RenderResponse, str]:
     if len(req.items) != req.segments:
         raise HTTPException(
@@ -134,10 +139,18 @@ def _render(
         fill_mode=req.fill_mode,
         title=req.title,
     )
+    kwargs: dict[str, Any] = {
+        "flatten_print": flatten_print,
+        "fill_disc": fill_disc,
+        "show_cut_circles": show_cut_circles,
+        "page_layout": page_layout,
+    }
+    if cut_color is not None:
+        kwargs["cut_color"] = cut_color
     svg = render_wheel_svg(
         _items_to_exercises(req.items),
         options,
-        flatten_print=flatten_print,
+        **kwargs,
     )
     return (
         RenderResponse(
@@ -213,11 +226,18 @@ def render(req: RenderRequest) -> RenderResponse:
 
 @router.post("/download.svg")
 def download_svg(req: RenderRequest) -> Response:
-    # The SVG download is the Cricut workflow: flatten the entire print
-    # layer into a single embedded raster image so Design Space cannot
-    # mistake any divider, ring or glyph for a cut path. Only the two
-    # red circles below remain as cuttable geometry.
-    _, svg = _render(req, flatten_print=True)
+    # SVG download = Cricut Print-Then-Cut. The whole print layer is
+    # flattened to a single embedded PNG that already shows the wheel
+    # as one solid white disc with the hub punched out as transparency.
+    # No red cut paths: Design Space's PTC auto-trace follows the
+    # visible/transparent boundary, which is exactly the outer circle
+    # and the hub circle. Same structure as the standalone PNG export.
+    _, svg = _render(
+        req,
+        flatten_print=True,
+        fill_disc=True,
+        show_cut_circles=False,
+    )
     return Response(
         content=svg,
         media_type="image/svg+xml",
@@ -296,7 +316,15 @@ def _png_set_phys(png: bytes, ppm: float) -> bytes:
 
 @router.post("/download.png")
 def download_png(req: RenderRequest) -> Response:
-    _, svg = _render(req)
+    # PNG download = same Cricut PTC structure as the SVG, just
+    # rasterized directly: solid white wheel disc, transparent hub
+    # hole, transparent outside. Cricut PTC auto-traces both
+    # boundaries — no red lines required.
+    _, svg = _render(
+        req,
+        fill_disc=True,
+        show_cut_circles=False,
+    )
     page_mm = _diameter_for(req.size) + 2.0 * PAGE_PADDING_MM
     png_bytes = _png_with_phys(svg, page_mm=page_mm, ppm=PNG_PIXELS_PER_MM)
     return Response(
@@ -308,10 +336,24 @@ def download_png(req: RenderRequest) -> Response:
 
 @router.post("/download.pdf")
 def download_pdf(req: RenderRequest) -> Response:
+    # PDF download = home-printer workflow. The wheel is centred on a
+    # full A4 portrait page at the exact selected diameter, so any
+    # printer set to "actual size / 100%" produces the right physical
+    # dimensions. Cut guides are kept as fine black hairlines (the
+    # outer circle and the hub circle) so users can cut by hand with
+    # scissors / craft knife — no red lines, no Cricut needed.
     import cairosvg
 
-    _, svg = _render(req)
+    _, svg = _render(
+        req,
+        show_cut_circles=True,
+        cut_color="#111111",
+        page_layout="a4_portrait",
+    )
     buf = io.BytesIO()
+    # cairosvg honours the SVG's mm-based width/height attributes when
+    # producing the PDF page size, so the wheel lands at the exact
+    # selected diameter on a real A4 sheet (210 x 297 mm).
     cairosvg.svg2pdf(bytestring=svg.encode("utf-8"), write_to=buf)
     return Response(
         content=buf.getvalue(),

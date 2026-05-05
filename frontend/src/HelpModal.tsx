@@ -27,7 +27,7 @@ export function HelpModal({ open, onClose }: Props) {
       >
         <div className="flex items-start justify-between gap-4">
           <h2 className="text-xl font-semibold">
-            Wie drucke ich das mit dem Cricut?
+            Wie drucke und schneide ich das?
           </h2>
           <button className="btn-ghost" onClick={onClose} aria-label="Schließen">
             ✕
@@ -35,50 +35,66 @@ export function HelpModal({ open, onClose }: Props) {
         </div>
 
         <div className="mt-4 space-y-4 text-sm leading-relaxed text-slate-700">
-          <p>
-            Diese App erzeugt eine{" "}
-            <span className="font-semibold">Cricut-fähige SVG</span> mit zwei
-            Ebenen:
+          <p className="font-semibold text-slate-900">
+            Drei Download-Formate, je nach Workflow:
           </p>
           <ul className="list-disc pl-5 space-y-1">
             <li>
-              <span className="font-semibold">Druck-Ebene</span> (schwarz):
-              Trennlinien und Aufgabentexte – wird gedruckt.
+              <span className="font-semibold">SVG / PNG</span> – für{" "}
+              <span className="font-semibold">
+                Cricut Print&nbsp;Then&nbsp;Cut
+              </span>
+              : Das Rad ist eine einzige gefüllte Fläche auf transparentem
+              Hintergrund. Cricut erkennt Außenrand und Nabenloch automatisch
+              über die Transparenz – keine roten Schnittlinien nötig.
             </li>
             <li>
-              <span className="font-semibold">Schnitt-Ebene</span> (rote
-              Haarlinien): Außenkreis &amp; Loch für die Nabe (19&nbsp;mm) –
-              wird vom Cricut geschnitten.
+              <span className="font-semibold">PDF</span> – für den{" "}
+              <span className="font-semibold">Heimdrucker</span> auf
+              A4-Format: Das Rad sitzt mittig auf der Seite, exakt im
+              gewählten Durchmesser. Außenkreis und Nabenloch sind als feine
+              schwarze Schnittlinien sichtbar – mit Schere oder Cutter
+              ausschneiden.
             </li>
           </ul>
-          <ol className="list-decimal pl-5 space-y-2">
-            <li>SVG herunterladen.</li>
-            <li>
-              In <span className="font-semibold">Cricut Design Space</span> auf{" "}
-              <span className="font-semibold">Hochladen → SVG</span> klicken
-              und die Datei einfügen.
-            </li>
-            <li>
-              Auf der Leinwand die schwarzen Druck-Elemente (Linien + Text)
-              auswählen und{" "}
-              <span className="font-semibold">Abflachen (Flatten)</span>{" "}
-              drücken. Damit werden sie zu einem{" "}
-              <span className="font-semibold">Print-Then-Cut-Bild</span>.
-            </li>
-            <li>
-              Die beiden roten Kreise als{" "}
-              <span className="font-semibold">Schnitt-Ebenen</span> (Operation
-              „Basic Cut") belassen und mit dem abgeflachten Bild{" "}
-              <span className="font-semibold">Anhängen (Attach)</span>, damit
-              die Position erhalten bleibt.
-            </li>
-            <li>
-              <span className="font-semibold">Make It</span> klicken. Cricut
-              fügt automatisch die Registrierungsmarken hinzu, du druckst auf
-              dem Heimdrucker und der Cricut schneidet entlang der roten
-              Linien.
-            </li>
-          </ol>
+
+          <div className="rounded-lg bg-emerald-50 ring-1 ring-emerald-200 p-3 text-emerald-900">
+            <p className="font-semibold">Cricut-Workflow (SVG oder PNG)</p>
+            <ol className="list-decimal pl-5 mt-1 space-y-1">
+              <li>SVG oder PNG herunterladen.</li>
+              <li>
+                In <span className="font-semibold">Cricut Design Space</span> →{" "}
+                <span className="font-semibold">Hochladen</span> → Datei
+                auswählen und als{" "}
+                <span className="font-semibold">
+                  Print&nbsp;Then&nbsp;Cut
+                </span>{" "}
+                importieren.
+              </li>
+              <li>
+                <span className="font-semibold">Make It</span> drücken. Cricut
+                druckt das Rad auf dem Heimdrucker und schneidet automatisch
+                entlang des Außenrands und des Nabenlochs.
+              </li>
+            </ol>
+          </div>
+
+          <div className="rounded-lg bg-violet-50 ring-1 ring-violet-200 p-3 text-violet-900">
+            <p className="font-semibold">Heimdrucker-Workflow (PDF)</p>
+            <ol className="list-decimal pl-5 mt-1 space-y-1">
+              <li>PDF herunterladen.</li>
+              <li>
+                Mit der Druckereinstellung{" "}
+                <span className="font-semibold">Tatsächliche Größe</span> bzw.{" "}
+                <span className="font-semibold">100 %</span> (nicht „An Seite
+                anpassen") auf A4 drucken.
+              </li>
+              <li>
+                Entlang der schwarzen Außenlinie und des Nabenkreises mit
+                Schere oder Cutter ausschneiden.
+              </li>
+            </ol>
+          </div>
           <div className="rounded-lg bg-sky-50 ring-1 ring-sky-200 p-3 text-sky-900">
             <p className="font-semibold">Aufgabentyp „Bildwörter“</p>
             <p className="mt-1">
@@ -99,15 +115,15 @@ export function HelpModal({ open, onClose }: Props) {
             <p className="font-semibold">Wichtig</p>
             <ul className="list-disc pl-5 mt-1 space-y-1">
               <li>
-                Druckereinstellung: <em>Tatsächliche Größe</em> – nicht „An
-                Seite anpassen".
+                Druckereinstellung: <em>Tatsächliche Größe</em> bzw. 100 % –
+                nicht „An Seite anpassen".
               </li>
               <li>
                 Cricut Print-Then-Cut hat ein Limit von 17,1 × 23,5&nbsp;cm.
                 Im Modus „Cricut" wird das Rad auf 17&nbsp;cm Durchmesser
                 erzeugt – das passt in dieses Limit. Im Vollformat-Modus
-                (18,8&nbsp;cm) kannst du als PDF drucken und manuell
-                ausschneiden.
+                (18,8&nbsp;cm) druckst du das PDF auf A4 und schneidest von
+                Hand aus.
               </li>
               <li>
                 Mindestens 300&nbsp;DPI Druckqualität wählen für scharfen

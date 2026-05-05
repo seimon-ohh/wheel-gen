@@ -114,6 +114,10 @@ PRINT_STROKE_WIDTH_MM = 0.4
 TEXT_COLOR = "#111111"
 
 PAGE_PADDING_MM = 5.0
+A4_WIDTH_MM = 210.0
+A4_HEIGHT_MM = 297.0
+
+PageLayout = Literal["fit", "a4_portrait"]
 # How far text sits from the *printed* outer ring (r ≈ R − 0.2). Keeps
 # labels away from the cut edge and looks more refined than butting
 # against the line.
@@ -270,36 +274,42 @@ FLATTEN_DPI = 300
 
 def _rasterize_print_layer(
     print_inner_svg: str,
-    page_mm: float,
-    page_in: float,
+    page_w_mm: float,
+    page_h_mm: float,
+    page_w_in: float,
+    page_h_in: float,
 ) -> str:
     """Rasterize the print-layer body and return an ``<image>`` element.
 
     The returned tag covers the full page, in viewBox (inch) user-units,
     so it drops in as a 1:1 replacement for the inline print elements.
+    The rasterizer renders onto a transparent surface, so any area the
+    print elements don't cover stays transparent — Cricut Print-Then-Cut
+    auto-traces along that visible/transparent boundary.
     """
     import cairosvg
 
     standalone = (
         '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
         '<svg xmlns="http://www.w3.org/2000/svg" '
-        f'width="{_fmt(page_mm)}mm" height="{_fmt(page_mm)}mm" '
-        f'viewBox="0 0 {_fmt(page_in)} {_fmt(page_in)}" '
+        f'width="{_fmt(page_w_mm)}mm" height="{_fmt(page_h_mm)}mm" '
+        f'viewBox="0 0 {_fmt(page_w_in)} {_fmt(page_h_in)}" '
         'shape-rendering="geometricPrecision" '
         'text-rendering="geometricPrecision">'
         f"{print_inner_svg}"
         "</svg>"
     )
-    output_size_px = max(1, int(round(page_mm / 25.4 * FLATTEN_DPI)))
+    out_w_px = max(1, int(round(page_w_mm / 25.4 * FLATTEN_DPI)))
+    out_h_px = max(1, int(round(page_h_mm / 25.4 * FLATTEN_DPI)))
     png_bytes = cairosvg.svg2png(
         bytestring=standalone.encode("utf-8"),
-        output_width=output_size_px,
-        output_height=output_size_px,
+        output_width=out_w_px,
+        output_height=out_h_px,
     )
     b64 = base64.b64encode(png_bytes).decode("ascii")
     return (
         '<image x="0" y="0" '
-        f'width="{_fmt(page_in)}" height="{_fmt(page_in)}" '
+        f'width="{_fmt(page_w_in)}" height="{_fmt(page_h_in)}" '
         'preserveAspectRatio="none" '
         f'href="data:image/png;base64,{b64}"/>'
     )
@@ -328,15 +338,25 @@ def render_wheel_svg(
     exercises: list[Exercise],
     options: WheelOptions | None = None,
     flatten_print: bool = False,
+    *,
+    fill_disc: bool = False,
+    show_cut_circles: bool = True,
+    cut_color: str = CUT_STROKE,
+    page_layout: PageLayout = "fit",
 ) -> str:
     """Render the wheel SVG.
 
     When ``flatten_print`` is ``True`` the entire print layer (fills,
-    rings, dividers, text) is rasterized to a single embedded PNG. The
-    cut layer keeps its two vector circles. This is the right choice
-    for Cricut Design Space, which would otherwise import every
-    ``<path>`` as a separate cuttable layer; with the print layer
-    flattened, only the two red circles end up cut.
+    rings, dividers, text) is rasterized to a single embedded PNG.
+    Combined with ``fill_disc=True`` and ``show_cut_circles=False`` this
+    produces the Cricut Print-Then-Cut layout: a single solid wheel disc
+    on a transparent canvas, with a transparent hub hole. Cricut Design
+    Space auto-traces both visible boundaries, so no separate red cut
+    paths are needed.
+
+    ``page_layout="a4_portrait"`` switches the page to 210x297 mm with
+    the wheel centred — used by the PDF download so home users can print
+    a single A4 page at the exact selected wheel size and cut by hand.
     """
     opts = options or WheelOptions()
     if len(exercises) != opts.segments:
@@ -349,9 +369,15 @@ def render_wheel_svg(
     n = opts.segments
     seg_deg = 360.0 / n
 
-    page = opts.diameter_mm + 2 * PAGE_PADDING_MM
-    cx = cy = page / 2.0
-    page_in = page * MM_TO_IN
+    if page_layout == "a4_portrait":
+        page_w_mm = A4_WIDTH_MM
+        page_h_mm = A4_HEIGHT_MM
+    else:
+        page_w_mm = page_h_mm = opts.diameter_mm + 2 * PAGE_PADDING_MM
+    cx = page_w_mm / 2.0
+    cy = page_h_mm / 2.0
+    page_w_in = page_w_mm * MM_TO_IN
+    page_h_in = page_h_mm * MM_TO_IN
 
     parts: list[str] = []
     parts.append(
@@ -360,8 +386,8 @@ def render_wheel_svg(
     parts.append(
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" '
-        f'width="{_fmt(page)}mm" height="{_fmt(page)}mm" '
-        f'viewBox="0 0 {_fmt(page_in)} {_fmt(page_in)}" '
+        f'width="{_fmt(page_w_mm)}mm" height="{_fmt(page_h_mm)}mm" '
+        f'viewBox="0 0 {_fmt(page_w_in)} {_fmt(page_h_in)}" '
         f'shape-rendering="geometricPrecision" '
         f'text-rendering="geometricPrecision">'
     )
@@ -384,6 +410,18 @@ def render_wheel_svg(
     # `parts` so we can either splice them in inline (vector preview
     # path) or rasterize the lot into a single <image> for Cricut.
     print_parts: list[str] = []
+
+    if fill_disc:
+        # Solid white donut, drawn first so every other print element
+        # sits on top of it. The donut runs from the hub to the outer
+        # cut radius, which means the rasterized print layer is one
+        # opaque shape with a hole at the hub — Cricut PTC traces both
+        # boundaries automatically, so no red cut layer is needed.
+        disc_d = _ring_path_d(cx, cy, r_outer_mm=R, r_inner_mm=r_hub)
+        print_parts.append(
+            f'<path d="{disc_d}" fill="#FFFFFF" '
+            'fill-rule="evenodd" stroke="none"/>'
+        )
 
     if opts.fill_mode != "none":
         # Fills go in *first* so the printed rings, dividers and labels
@@ -579,34 +617,40 @@ def render_wheel_svg(
     if flatten_print:
         # Cricut Design Space imports each <path> as its own cuttable
         # layer. By collapsing the entire print body into one embedded
-        # PNG we leave Cricut nothing to mistake for a cut path — only
-        # the two red circles below remain as actual cut geometry.
+        # PNG we leave Cricut nothing to mistake for a cut path — the
+        # auto-trace then follows the visible/transparent boundary of
+        # the (white) wheel disc and its hub hole.
         parts.append(
             _rasterize_print_layer(
                 "\n".join(print_parts),
-                page_mm=page,
-                page_in=page_in,
+                page_w_mm=page_w_mm,
+                page_h_mm=page_h_mm,
+                page_w_in=page_w_in,
+                page_h_in=page_h_in,
             )
         )
     else:
         parts.extend(print_parts)
     parts.append("</g>")
 
-    cut_attrs = (
-        f'fill="none" stroke="{CUT_STROKE}" '
-        f'stroke-width="{_ifmt(CUT_STROKE_WIDTH_MM)}"'
-    )
-    parts.append(
-        '<g id="cut-layer" inkscape:label="Cut" inkscape:groupmode="layer">'
-    )
-    parts.append(
-        f'<circle {cut_attrs} cx="{_ifmt(cx)}" cy="{_ifmt(cy)}" r="{_ifmt(R)}"/>'
-    )
-    parts.append(
-        f'<circle {cut_attrs} cx="{_ifmt(cx)}" cy="{_ifmt(cy)}" '
-        f'r="{_ifmt(r_hub)}"/>'
-    )
-    parts.append("</g>")
+    if show_cut_circles:
+        cut_attrs = (
+            f'fill="none" stroke="{cut_color}" '
+            f'stroke-width="{_ifmt(CUT_STROKE_WIDTH_MM)}"'
+        )
+        parts.append(
+            '<g id="cut-layer" inkscape:label="Cut" '
+            'inkscape:groupmode="layer">'
+        )
+        parts.append(
+            f'<circle {cut_attrs} cx="{_ifmt(cx)}" cy="{_ifmt(cy)}" '
+            f'r="{_ifmt(R)}"/>'
+        )
+        parts.append(
+            f'<circle {cut_attrs} cx="{_ifmt(cx)}" cy="{_ifmt(cy)}" '
+            f'r="{_ifmt(r_hub)}"/>'
+        )
+        parts.append("</g>")
 
     parts.append("</svg>")
     return "\n".join(parts)
